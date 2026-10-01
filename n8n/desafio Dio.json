@@ -1,0 +1,174 @@
+{
+  "name": "desafio Dio",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "clientes",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "59707c52-71ef-48a1-acc4-d65a8f7c4d1d",
+      "name": "Webhook",
+      "webhookId": "920b107e-bcfb-4572-927d-d2efab48c2a2"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1136,
+        -80
+      ],
+      "id": "ec2743d5-5b9c-4125-9862-385f5687cf87",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "url": "https://raw.githubusercontent.com/digitalinnovationone/dio-lab-assistente-investimentos-rpa-n8n/main/docs/data.csv",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        272,
+        0
+      ],
+      "id": "98e74480-c13d-40c2-9d48-ef94c6eafb35",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pega o CSV como texto vindo do HTTP Request\nconst csvRaw = $json.data ?? $json.body ?? $json;\nconst text = (typeof csvRaw === \"string\") ? csvRaw : JSON.stringify(csvRaw);\n\nconst lines = text.split(/\\r?\\n/).map(l => l.trim()).filter(Boolean);\nconst headers = lines[0].split(\",\").map(h => h.trim());\n\nconst investimentos = lines.slice(1).map(line => {\n  const cols = line.split(\",\").map(c => c.trim());\n  const obj = {};\n  headers.forEach((h, i) => obj[h] = cols[i] ?? \"\");\n\n  // normaliza mínimo para número\n  obj.minimo = Number(String(obj.minimo).replace(/[^\\d]/g, \"\")) || 0;\n\n  return obj;\n});\n\nreturn [{ json: { investimentos } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        496,
+        0
+      ],
+      "id": "caebafe5-c8c9-41ab-9a9c-2fc077ac88fa",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        688,
+        -160
+      ],
+      "id": "615857ed-39b2-4e07-8789-34511dae0250",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Tabela de produtos de investimento por perfil\nconst produtosInvestimento = [\n  { perfil: \"Conservador\", produto: \"Poupança\", minimo: 100, rentabilidade: \"6.2%\" },\n  { perfil: \"Conservador\", produto: \"CDB Liquidez Diária\", minimo: 1000, rentabilidade: \"12.5%\" },\n  { perfil: \"Conservador\", produto: \"Tesouro Selic\", minimo: 500, rentabilidade: \"11.0%\" },\n  { perfil: \"Moderado\", produto: \"CDB Prefixado\", minimo: 1000, rentabilidade: \"14.0%\" },\n  { perfil: \"Moderado\", produto: \"Fundo Multimercado\", minimo: 5000, rentabilidade: \"16.0%\" },\n  { perfil: \"Moderado\", produto: \"Tesouro IPCA+\", minimo: 1000, rentabilidade: \"IPCA+6.0%\" },\n  { perfil: \"Arrojado\", produto: \"Ações ETF\", minimo: 500, rentabilidade: \"Variável\" },\n  { perfil: \"Arrojado\", produto: \"Fundo de Ações\", minimo: 10000, rentabilidade: \"Variável\" },\n  { perfil: \"Arrojado\", produto: \"Criptomoedas\", minimo: 100, rentabilidade: \"Variável\" }\n];\n\n// Função para converter \"R$ 12.500,00\" para número (12500)\nfunction converterSaldoParaNumero(saldoTexto) {\n  if (typeof saldoTexto === 'number') return saldoTexto;\n  if (!saldoTexto) return 0;\n  const limpo = String(saldoTexto).replace(/[R$\\s.]/g, '').replace(',', '.');\n  return parseFloat(limpo) || 0;\n}\n\n// Processa 1 único cliente\nfunction processarCliente(cliente) {\n  const nome = cliente.nome || cliente.Nome || 'Cliente';\n  const email = cliente.email || cliente.Email || '';\n  const perfil = cliente.perfil || cliente.Perfil || 'Conservador';\n  const saldoTexto = cliente.saldo || cliente.Saldo || 'R$ 0,00';\n  const saldoNum = converterSaldoParaNumero(saldoTexto);\n\n  const opcoesPerfil = produtosInvestimento.filter(inv => inv.perfil === perfil);\n  \n  let recomendacao = opcoesPerfil.find(inv => saldoNum >= inv.minimo);\n  let motivo = \"saldo_ok\";\n\n  if (!recomendacao && opcoesPerfil.length > 0) {\n    recomendacao = opcoesPerfil.reduce((prev, curr) => prev.minimo < curr.minimo ? prev : curr);\n    motivo = \"saldo_insuficiente\";\n  }\n\n  const prodNome = recomendacao ? recomendacao.produto : \"Nenhum\";\n  const minVal = recomendacao ? recomendacao.minimo : 0;\n  const rent = recomendacao ? recomendacao.rentabilidade : \"N/A\";\n  const minFormatado = minVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 });\n\n  const mensagens = [\n    `Olá \\({nome}! Pelo seu perfil (\\){perfil}), uma boa opção é **\\({prodNome}** (mínimo R\\) \\({minFormatado}). Com seu saldo atual (\\){saldoTexto}), você já consegue investir. Rentabilidade: ${rent}.`,\n    `Oi \\({nome}! Recomendação para perfil\\){perfil}: **\\({prodNome}** (mínimo R\\) \\({minFormatado}). Seu saldo (\\){saldoTexto}) já atende o mínimo. Rentabilidade: ${rent}.`,\n    `\\({nome}, indo direto ao ponto: para o perfil\\){perfil}, **\\({prodNome}** (mínimo R\\) \\({minFormatado}). Você tem\\){saldoTexto}, então dá pra aplicar. Rentabilidade: ${rent}.`\n  ];\n\n  return {\n    nome: nome,\n    email: email,\n    perfil: perfil,\n    saldo_texto: saldoTexto,\n    saldo_num: saldoNum,\n    Recomendacao: {\n      perfil: perfil,\n      produto: prodNome,\n      minimo: minVal,\n      rentabilidade: rent\n    },\n    motivo: motivo,\n    mensagens: mensagens,\n    mensagem_escolhida: mensagens[0]\n  };\n}\n\n// ----------------------------------------------------\n// Captura e extração automática da lista de clientes\n// ----------------------------------------------------\nconst itensEntrada = $input.all();\nlet listaClientes = [];\n\nfor (const item of itensEntrada) {\n  const json = item.json;\n\n  // Se a requisição veio via Webhook POST, os dados costumam estar em json.body\n  const dados = json.body || json;\n\n  if (Array.isArray(dados)) {\n    listaClientes.push(...dados);\n  } else if (Array.isArray(dados.clientes)) {\n    listaClientes.push(...dados.clientes);\n  } else if (Array.isArray(dados.data)) {\n    listaClientes.push(...dados.data);\n  } else if (typeof dados === 'object') {\n    // Se for um único cliente por item do n8n\n    listaClientes.push(dados);\n  }\n}\n\n// Retorna cada cliente como um Item separado no n8n\nreturn listaClientes.map(cliente => ({\n  json: processarCliente(cliente)\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        912,
+        -160
+      ],
+      "id": "5620e6d8-fc40-4860-af68-2f072502a234",
+      "name": "Code in JavaScript1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook": {
+      "main": [
+        []
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "264bf62c-934d-47ec-b589-ce391cf74f27",
+  "meta": {
+    "instanceId": "c78585eee295240dfb2abd52cc839627b56cf367408aba126856da42864a614f"
+  },
+  "nodeGroups": [],
+  "id": "bbiuTYNQLWSJT4Vr",
+  "tags": []
+}
